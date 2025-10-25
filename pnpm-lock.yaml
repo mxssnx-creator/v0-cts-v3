@@ -54,13 +54,13 @@ importers:
         specifier: latest
         version: 1.2.8(@types/react-dom@19.2.2(@types/react@19.2.2))(@types/react@19.2.2)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@tailwindcss/postcss':
-        specifier: latest
+        specifier: ^4.1.9
         version: 4.1.16
       autoprefixer:
-        specifier: latest
+        specifier: '>=10.4.0'
         version: 10.4.21(postcss@8.5.6)
       axios:
-        specifier: latest
+        specifier: '>=1.0.0'
         version: 1.12.2
       bcryptjs:
         specifier: latest
@@ -69,16 +69,16 @@ importers:
         specifier: latest
         version: 12.4.1
       bingx-api:
-        specifier: latest
+        specifier: '>=1.21.0'
         version: 1.21.0(class-transformer@0.5.1)(class-validator@0.14.2)
       bybit-api:
-        specifier: latest
+        specifier: '>=4.0.0'
         version: 4.4.0(typescript@5.0.2)
       class-transformer:
-        specifier: latest
+        specifier: '>=0.5.0'
         version: 0.5.1
       class-validator:
-        specifier: latest
+        specifier: '>=0.14.0'
         version: 0.14.2
       class-variance-authority:
         specifier: ^0.7.1
@@ -105,7 +105,7 @@ importers:
         specifier: latest
         version: 5.1.6
       next:
-        specifier: latest
+        specifier: '>=16.0.0'
         version: 16.0.0(@babel/core@7.28.5)(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       next-themes:
         specifier: latest
@@ -115,7 +115,7 @@ importers:
         specifier: latest
         version: 0.12.7
       postcss:
-        specifier: latest
+        specifier: '>=8.5.0'
         version: 8.5.6
       react:
         specifier: latest
@@ -124,7 +124,7 @@ importers:
         specifier: latest
         version: 9.11.1(react@19.2.0)
       react-dom:
-        specifier: latest
+        specifier: '>=19.0.0'
         version: 19.2.0(react@19.2.0)
       recharts:
         specifier: latest
@@ -136,7 +136,7 @@ importers:
         specifier: ^2.5.5
         version: 2.5.5
       tailwindcss:
-        specifier: latest
+        specifier: ^4.1.9
         version: 4.1.16
       tailwindcss-animate:
         specifier: ^1.0.7
@@ -148,35 +148,35 @@ importers:
         specifier: latest
         version: 13.0.0
       ws:
-        specifier: latest
+        specifier: '>=8.18.0'
         version: 8.18.3
     devDependencies:
       '@types/bcryptjs':
-        specifier: latest
+        specifier: '>=3.0.0'
         version: 3.0.0
       '@types/better-sqlite3':
-        specifier: latest
+        specifier: '>=7.6.0'
         version: 7.6.13
       '@types/node':
         specifier: ^22
         version: 22.0.0
       '@types/react':
-        specifier: latest
+        specifier: '>=19.0.0'
         version: 19.2.2
       '@types/react-dom':
-        specifier: latest
+        specifier: '>=19.0.0'
         version: 19.2.2(@types/react@19.2.2)
       '@types/uuid':
-        specifier: latest
+        specifier: '>=11.0.0'
         version: 11.0.0
       '@types/ws':
-        specifier: latest
+        specifier: '>=8.18.0'
         version: 8.18.1
       eslint:
-        specifier: latest
+        specifier: '>=9.0.0'
         version: 9.38.0(jiti@2.6.1)
       eslint-config-next:
-        specifier: latest
+        specifier: '>=16.0.0'
         version: 16.0.0(@typescript-eslint/parser@8.46.2(eslint@9.38.0(jiti@2.6.1))(typescript@5.0.2))(eslint@9.38.0(jiti@2.6.1))(typescript@5.0.2)
       typescript:
         specifier: ^5
@@ -4891,7 +4891,7 @@ snapshots:
 
   '@types/better-sqlite3@7.6.13':
     dependencies:
-      '@types/node': 22.0.0
+      '@types/node': 22.18.12
 
   '@types/d3-array@3.2.2': {}
 
@@ -4945,7 +4945,7 @@ snapshots:
 
   '@types/pg@8.15.5':
     dependencies:
-      '@types/node': 22.0.0
+      '@types/node': 22.18.12
       pg-protocol: 1.10.3
       pg-types: 2.2.0
 
@@ -4967,7 +4967,7 @@ snapshots:
 
   '@types/ws@8.18.1':
     dependencies:
-      '@types/node': 22.0.0
+      '@types/node': 22.18.12
 
   '@typescript-eslint/eslint-plugin@8.46.2(@typescript-eslint/parser@8.46.2(eslint@9.38.0(jiti@2.6.1))(typescript@5.0.2))(eslint@9.38.0(jiti@2.6.1))(typescript@5.0.2)':
     dependencies:
@@ -6606,7 +6606,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 22.0.0
+      '@types/node': 22.18.12
       merge-stream: 2.0.0
       supports-color: 8.1.1
     optional: true

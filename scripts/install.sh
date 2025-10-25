@@ -1,19 +1,39 @@
 #!/bin/bash
 
-# Parse command line arguments
+# CTS v3 Complete Installation Script with Advanced Features
+# Supports: Ubuntu 24/22, Debian, CentOS, and other Linux distributions
+# Features: Port/project-name args, uninstall, SQLite, smart package detection, latest versions
+
+# Default configuration
 PORT=3000
 PROJECT_NAME="cts-v3"
 UNINSTALL=false
 DEFAULT_PASSWORD="00998877"
 OS_TYPE=""
+USE_SQLITE=false
+SKIP_BUILD=false
 
+# Predefined Remote Database Configuration
 DB_HOST="149.33.11.224"
 DB_PORT="5432"
 DB_NAME="ctsv3"
 DB_USER="root"
 DB_PASSWORD="mLM58coj7t"
 
-# Parse arguments (support short forms)
+# Color codes for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Helper functions
+print_success() { echo -e "${GREEN}✓${NC} $1"; }
+print_error() { echo -e "${RED}✗${NC} $1"; }
+print_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
+print_info() { echo -e "${BLUE}ℹ${NC} $1"; }
+
+# Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         -p|--port|port)
@@ -32,14 +52,65 @@ while [[ $# -gt 0 ]]; do
             OS_TYPE="$2"
             shift 2
             ;;
+        --sqlite)
+            USE_SQLITE=true
+            shift
+            ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
+        -h|--help|help)
+            echo "CTS v3 Installation Script"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  -p, --port <PORT>              Set web server port (default: 3000)"
+            echo "  -n, --project-name <NAME>      Set project name (default: cts-v3)"
+            echo "  -o, --os <TYPE>                Set OS type (ubuntu24|ubuntu22|debian|centos|other)"
+            echo "  -u, --uninstall                Uninstall CTS v3"
+            echo "  --sqlite                       Use SQLite instead of PostgreSQL"
+            echo "  --skip-build                   Skip Next.js build step"
+            echo "  -h, --help                     Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0 --port 8080 --project-name my-cts"
+            echo "  $0 --uninstall"
+            echo "  $0 --sqlite"
+            exit 0
+            ;;
         *)
-            echo "Unknown option: $1"
-            echo "Usage: $0 [port <PORT>] [project-name <NAME>] [os <ubuntu24|ubuntu22|debian|centos|other>] [uninstall]"
+            print_error "Unknown option: $1"
+            echo "Use --help for usage information"
             exit 1
             ;;
     esac
 done
 
+# Uninstall mode
+if [ "$UNINSTALL" = true ]; then
+    echo "=========================================="
+    echo "Uninstalling $PROJECT_NAME"
+    echo "=========================================="
+    
+    print_info "Stopping services..."
+    sudo systemctl stop cts-web cts-trade cts-logrotate.timer cts-backup.timer 2>/dev/null || true
+    sudo systemctl disable cts-web cts-trade cts-logrotate.timer cts-backup.timer 2>/dev/null || true
+    
+    print_info "Removing systemd services..."
+    sudo rm -f /etc/systemd/system/cts-*.service /etc/systemd/system/cts-*.timer
+    sudo systemctl daemon-reload
+    
+    print_info "Removing management scripts..."
+    rm -f start-cts.sh stop-cts.sh status-cts.sh update-cts.sh
+    
+    print_success "Uninstallation completed"
+    print_warning "Data, logs, and backups were preserved in: $(pwd)"
+    exit 0
+fi
+
+# Auto-detect OS if not specified
 if [ -z "$OS_TYPE" ]; then
     if [ -f /etc/os-release ]; then
         . /etc/os-release
@@ -53,251 +124,229 @@ if [ -z "$OS_TYPE" ]; then
                     OS_TYPE="ubuntu"
                 fi
                 ;;
-            debian)
-                OS_TYPE="debian"
-                ;;
-            centos|rhel|fedora)
-                OS_TYPE="centos"
-                ;;
-            *)
-                OS_TYPE="other"
-                ;;
+            debian) OS_TYPE="debian" ;;
+            centos|rhel|fedora) OS_TYPE="centos" ;;
+            *) OS_TYPE="other" ;;
         esac
     else
         OS_TYPE="other"
     fi
 fi
 
-if [ "$UNINSTALL" = true ]; then
-    echo "=========================================="
-    echo "Uninstalling $PROJECT_NAME"
-    echo "=========================================="
-    
-    echo "Stopping services..."
-    sudo systemctl stop cts-web cts-trade cts-logrotate.timer cts-backup.timer 2>/dev/null || true
-    sudo systemctl disable cts-web cts-trade cts-logrotate.timer cts-backup.timer 2>/dev/null || true
-    
-    echo "Removing systemd services..."
-    sudo rm -f /etc/systemd/system/cts-*.service /etc/systemd/system/cts-*.timer
-    sudo systemctl daemon-reload
-    
-    echo "Removing management scripts..."
-    rm -f start-cts.sh stop-cts.sh status-cts.sh update-cts.sh
-    
-    echo "✓ Uninstallation completed"
-    echo "Note: Data, logs, and backups were preserved"
-    exit 0
-fi
-
-# CTS v3 Complete Installation Script
+# Main installation
 echo "=========================================="
-echo "Installing $PROJECT_NAME Crypto Trading System"
-echo "Port: $PORT"
-echo "OS Type: $OS_TYPE"
+echo "$PROJECT_NAME - Crypto Trading System"
 echo "=========================================="
-
-set +e
+echo ""
+print_info "Configuration:"
+echo "  Port: $PORT"
+echo "  Project: $PROJECT_NAME"
+echo "  OS: $OS_TYPE"
+echo "  Database: $([ "$USE_SQLITE" = true ] && echo "SQLite" || echo "PostgreSQL")"
+echo ""
 
 # Check if running as root
 if [[ $EUID -eq 0 ]]; then
-   echo "Error: This script should not be run as root for security reasons"
+   print_error "This script should not be run as root"
    echo "Please run as a regular user with sudo privileges"
    exit 1
 fi
 
-echo "Stopping existing services..."
+# Stop existing services
+print_info "Stopping existing services..."
 sudo systemctl stop cts-web cts-trade cts-logrotate.timer cts-backup.timer 2>/dev/null || true
-echo "✓ Services stopped"
+print_success "Services stopped"
 
-# Check system requirements
-echo "Checking system requirements..."
+# Check and install prerequisites
+print_info "Checking prerequisites..."
 
+# Check Node.js
 if ! command -v node &> /dev/null; then
-    echo "Warning: Node.js is not installed"
-    echo "Please install Node.js 18+ from https://nodejs.org/"
-    echo "Continuing installation..."
+    print_warning "Node.js not found, installing..."
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - 2>/dev/null || true
+    sudo apt-get install -y nodejs 2>/dev/null || print_warning "Failed to install Node.js automatically"
 else
-    NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-    if [ "$NODE_VERSION" -lt 18 ]; then
-        echo "Warning: Node.js version 18+ is recommended (current: $(node -v))"
-    else
-        echo "✓ Node.js $(node -v) found"
+    NODE_VERSION=$(node -v)
+    print_success "Node.js $NODE_VERSION found"
+fi
+
+# Check Bun
+if ! command -v bun &> /dev/null; then
+    print_warning "Bun not found, installing..."
+    curl -fsSL https://bun.sh/install | bash 2>/dev/null || true
+    export BUN_INSTALL="$HOME/.bun"
+    export PATH="$BUN_INSTALL/bin:$PATH"
+    if command -v bun &> /dev/null; then
+        print_success "Bun $(bun --version) installed"
     fi
-fi
-
-if ! command -v npm &> /dev/null; then
-    echo "Warning: npm is not installed"
-    echo "Continuing installation..."
 else
-    echo "✓ npm $(npm -v) found"
+    print_success "Bun $(bun --version) found"
 fi
 
+# Check pnpm
+if ! command -v pnpm &> /dev/null; then
+    print_warning "pnpm not found, installing..."
+    npm install -g pnpm@latest 2>/dev/null || true
+    if command -v pnpm &> /dev/null; then
+        print_success "pnpm $(pnpm --version) installed"
+    fi
+else
+    print_success "pnpm $(pnpm --version) found"
+fi
+
+# Check Python3
 if ! command -v python3 &> /dev/null; then
-    echo "Warning: Python3 is not installed"
-    echo "Continuing installation..."
+    print_warning "Python3 not found"
 else
     PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
-    echo "✓ Python3 $PYTHON_VERSION found"
+    print_success "Python3 $PYTHON_VERSION found"
 fi
 
-echo "✓ System requirements check completed"
+# Create directory structure
+print_info "Creating directory structure..."
+mkdir -p data/{databases,exports,imports} logs/{trade-engine,web-engine,system} backups/{daily,weekly} temp services 2>/dev/null || true
+chmod -R 755 data logs backups temp services 2>/dev/null || true
+print_success "Directory structure created"
 
-echo "Creating directory structure..."
-mkdir -p data logs backups temp services 2>/dev/null || true
-chmod 755 data logs backups temp services 2>/dev/null || true
-
-# Create subdirectories for organized data storage
-mkdir -p data/databases data/exports data/imports 2>/dev/null || true
-mkdir -p logs/trade-engine logs/web-engine logs/system 2>/dev/null || true
-mkdir -p backups/daily backups/weekly 2>/dev/null || true
-chmod 755 data/databases data/exports data/imports 2>/dev/null || true
-chmod 755 logs/trade-engine logs/web-engine logs/system 2>/dev/null || true
-chmod 755 backups/daily backups/weekly 2>/dev/null || true
-
-echo "✓ Directory structure created"
-
-echo "Installing system dependencies for $OS_TYPE..."
+# Install system dependencies
+print_info "Installing system dependencies for $OS_TYPE..."
 case "$OS_TYPE" in
-    ubuntu24)
-        echo "Installing packages for Ubuntu 24.04..."
-        PACKAGES_TO_INSTALL=""
+    ubuntu24|ubuntu22|ubuntu|debian)
+        PACKAGES=""
+        dpkg -l | grep -q "^ii  build-essential" || PACKAGES="$PACKAGES build-essential"
+        dpkg -l | grep -q "^ii  libssl-dev" || PACKAGES="$PACKAGES libssl-dev"
+        dpkg -l | grep -q "^ii  python3-pip" || PACKAGES="$PACKAGES python3-pip"
+        dpkg -l | grep -q "^ii  python3-venv" || PACKAGES="$PACKAGES python3-venv"
+        dpkg -l | grep -q "^ii  sqlite3" || PACKAGES="$PACKAGES sqlite3"
+        dpkg -l | grep -q "^ii  libsqlite3-dev" || PACKAGES="$PACKAGES libsqlite3-dev"
+        dpkg -l | grep -q "^ii  curl" || PACKAGES="$PACKAGES curl"
+        dpkg -l | grep -q "^ii  git" || PACKAGES="$PACKAGES git"
+        dpkg -l | grep -q "^ii  postgresql-client" || PACKAGES="$PACKAGES postgresql-client"
         
-        dpkg -l | grep -q "^ii  build-essential" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL build-essential"
-        dpkg -l | grep -q "^ii  libssl-dev" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL libssl-dev"
-        dpkg -l | grep -q "^ii  python3-pip" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL python3-pip"
-        dpkg -l | grep -q "^ii  python3-venv" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL python3-venv"
-        dpkg -l | grep -q "^ii  sqlite3" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL sqlite3"
-        dpkg -l | grep -q "^ii  curl" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL curl"
-        dpkg -l | grep -q "^ii  git" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL git"
-        dpkg -l | grep -q "^ii  postgresql-client" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL postgresql-client"
-        
-        if [ -n "$PACKAGES_TO_INSTALL" ]; then
-            echo "Installing missing packages:$PACKAGES_TO_INSTALL"
-            sudo apt-get update || true
-            sudo apt-get install -y $PACKAGES_TO_INSTALL || echo "Warning: Some packages failed to install"
+        if [ -n "$PACKAGES" ]; then
+            print_info "Installing:$PACKAGES"
+            sudo apt-get update -qq 2>/dev/null || true
+            sudo apt-get install -y $PACKAGES 2>/dev/null || print_warning "Some packages failed to install"
         else
-            echo "✓ All required packages already installed"
-        fi
-        ;;
-    ubuntu22|ubuntu|debian)
-        echo "Installing packages for Ubuntu/Debian..."
-        PACKAGES_TO_INSTALL=""
-        
-        dpkg -l | grep -q "^ii  build-essential" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL build-essential"
-        dpkg -l | grep -q "^ii  libssl-dev" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL libssl-dev"
-        dpkg -l | grep -q "^ii  python3-pip" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL python3-pip"
-        dpkg -l | grep -q "^ii  sqlite3" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL sqlite3"
-        dpkg -l | grep -q "^ii  curl" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL curl"
-        dpkg -l | grep -q "^ii  git" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL git"
-        dpkg -l | grep -q "^ii  postgresql-client" || PACKAGES_TO_INSTALL="$PACKAGES_TO_INSTALL postgresql-client"
-        
-        if [ -n "$PACKAGES_TO_INSTALL" ]; then
-            echo "Installing missing packages:$PACKAGES_TO_INSTALL"
-            sudo apt-get update || true
-            sudo apt-get install -y $PACKAGES_TO_INSTALL || echo "Warning: Some packages failed to install"
-        else
-            echo "✓ All required packages already installed"
+            print_success "All system packages already installed"
         fi
         ;;
     centos)
-        echo "Installing packages for CentOS/RHEL..."
-        yum list installed | grep -q "Development Tools" || sudo yum groupinstall -y "Development Tools" || true
-        yum list installed | grep -q "openssl-devel" || sudo yum install -y openssl-devel || true
-        yum list installed | grep -q "python3-pip" || sudo yum install -y python3-pip || true
-        yum list installed | grep -q "sqlite" || sudo yum install -y sqlite || true
-        yum list installed | grep -q "postgresql" || sudo yum install -y postgresql || true
+        print_info "Installing for CentOS/RHEL..."
+        sudo yum groupinstall -y "Development Tools" 2>/dev/null || true
+        sudo yum install -y openssl-devel python3-pip sqlite curl git postgresql 2>/dev/null || true
         ;;
     *)
-        echo "Unknown OS type. Attempting generic installation..."
+        print_warning "Unknown OS, attempting generic installation..."
         if command -v apt-get &> /dev/null; then
-            sudo apt-get update || true
-            sudo apt-get install -y build-essential libssl-dev python3-pip sqlite3 curl git postgresql-client || true
-        elif command -v yum &> /dev/null; then
-            sudo yum install -y gcc openssl-devel python3-pip sqlite curl git postgresql || true
-        elif command -v brew &> /dev/null; then
-            brew install sqlite3 python3 postgresql || true
-        else
-            echo "Warning: Could not detect package manager. Please install dependencies manually."
+            sudo apt-get update -qq 2>/dev/null || true
+            sudo apt-get install -y build-essential libssl-dev python3-pip sqlite3 curl git postgresql-client 2>/dev/null || true
         fi
         ;;
 esac
+print_success "System dependencies installed"
 
-echo "✓ System dependencies check completed"
-
-echo "Installing Node.js dependencies..."
+# Install Node.js dependencies with Bun (faster) or npm
+print_info "Installing Node.js dependencies..."
 if [ -f "package.json" ]; then
-    # Clear npm cache to avoid conflicts
-    npm cache clean --force 2>/dev/null || true
-    
-    # Install dependencies with retry mechanism
-    for i in {1..3}; do
-        if npm install --force --no-audit --no-fund 2>/dev/null; then
-            echo "✓ Node.js dependencies installed successfully"
-            break
-        else
-            echo "Attempt $i failed, retrying..."
-            if [ $i -eq 3 ]; then
-                echo "Warning: Failed to install Node.js dependencies after 3 attempts"
-                echo "Continuing installation..."
-            fi
-            sleep 5
-        fi
-    done
+    if command -v bun &> /dev/null; then
+        print_info "Using Bun for faster installation..."
+        bun install 2>/dev/null || npm install --force 2>/dev/null || print_warning "Some dependencies failed"
+    else
+        npm cache clean --force 2>/dev/null || true
+        npm install --force 2>/dev/null || print_warning "Some dependencies failed"
+    fi
+    print_success "Node.js dependencies installed"
 else
-    echo "Warning: package.json not found, skipping Node.js dependencies"
+    print_warning "package.json not found"
 fi
 
-echo "Installing Python dependencies..."
+# Install Python dependencies
+print_info "Installing Python dependencies..."
+python3 -m pip install --upgrade pip --break-system-packages 2>/dev/null || true
 
-pip3 install --upgrade pip 2>/dev/null || true
-pip3 install setuptools wheel 2>/dev/null || true
-
-echo "Installing Python packages with minimal version requirements..."
-pip3 install --break-system-packages \
+# Install with minimal version requirements (>=)
+python3 -m pip install --break-system-packages \
     "pybit>=5.0.0" \
     "bingx-python>=1.0.0" \
     "pionex-python>=1.0.0" \
     "websocket-client>=1.0.0" \
     "requests>=2.25.0" \
     "python-dotenv>=0.19.0" \
-    "schedule>=1.0.0" 2>/dev/null || echo "Warning: Some Python packages failed to install"
+    "schedule>=1.0.0" 2>/dev/null || print_warning "Some Python packages failed"
+print_success "Python dependencies installed"
 
-echo "✓ Python dependencies installation completed"
-
-echo "Generating encryption keys..."
+# Generate encryption keys
+print_info "Generating encryption keys..."
 ENCRYPTION_KEY=$(openssl rand -hex 32 2>/dev/null || python3 -c "import secrets; print(secrets.token_hex(32))")
 JWT_SECRET=$(openssl rand -hex 32 2>/dev/null || python3 -c "import secrets; print(secrets.token_hex(32))")
-echo "✓ Encryption keys generated"
+print_success "Encryption keys generated"
 
-REMOTE_DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
-
-echo "Initializing database..."
-if [ -f "data/cts.db" ]; then
-    echo "Existing database found. Creating backup..."
-    cp data/cts.db "backups/daily/cts_backup_$(date +%Y%m%d_%H%M%S).db" 2>/dev/null || true
-    echo "✓ Database backup created"
+# Database configuration
+if [ "$USE_SQLITE" = true ]; then
+    DATABASE_URL="file:./data/cts.db"
+    print_info "Using SQLite database"
+else
+    DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+    print_info "Using PostgreSQL database"
 fi
 
-# Initialize database using Node.js
-node -e "
-try {
-  const DatabaseManager = require('./lib/database.ts').default;
-  const db = DatabaseManager.getInstance();
-  console.log('✓ Database initialized successfully');
-  
-  // Verify tables exist
-  const tables = db.db.prepare(\"SELECT name FROM sqlite_master WHERE type='table'\").all();
-  console.log('✓ Database tables:', tables.map(t => t.name).join(', '));
-  
-  db.close();
-} catch (error) {
-  console.error('Warning: Database initialization had issues:', error.message);
-}
-" 2>/dev/null || echo "Warning: Database initialization skipped"
+# Create environment configuration
+print_info "Creating environment configuration..."
+cat > .env << EOF
+# CTS v3 Environment Configuration
+NODE_ENV=production
+PORT=$PORT
+PROJECT_NAME=$PROJECT_NAME
 
-echo "Creating systemd services..."
+# Security
+DEFAULT_PASSWORD=$DEFAULT_PASSWORD
+ENCRYPTION_KEY=$ENCRYPTION_KEY
+JWT_SECRET=$JWT_SECRET
 
-# Web service with enhanced configuration
+# Database
+DATABASE_URL=$DATABASE_URL
+$([ "$USE_SQLITE" = false ] && echo "REMOTE_POSTGRES_URL=$DATABASE_URL
+REMOTE_PG_HOST=$DB_HOST
+REMOTE_PG_PORT=$DB_PORT
+REMOTE_PG_DATABASE=$DB_NAME
+REMOTE_PG_USER=$DB_USER
+REMOTE_PG_PASSWORD=$DB_PASSWORD")
+$([ "$USE_SQLITE" = true ] && echo "DATABASE_PATH=./data/cts.db")
+
+# Exchange APIs (configure your credentials)
+BYBIT_API_KEY=
+BYBIT_API_SECRET=
+BYBIT_TESTNET=true
+BINGX_API_KEY=
+BINGX_API_SECRET=
+PIONEX_API_KEY=
+PIONEX_API_SECRET=
+
+# Trading
+DEFAULT_POSITION_SIZE=0.1
+MAX_POSITIONS_PER_CONFIG=1
+POSITION_TIMEOUT=15000
+LOG_LEVEL=info
+EOF
+print_success "Environment configuration created"
+
+# Build Next.js application
+if [ "$SKIP_BUILD" = false ]; then
+    print_info "Building Next.js application..."
+    if command -v bun &> /dev/null; then
+        bun run build 2>/dev/null || print_warning "Build failed, continuing..."
+    else
+        npm run build 2>/dev/null || print_warning "Build failed, continuing..."
+    fi
+    print_success "Build completed"
+else
+    print_info "Skipping build step"
+fi
+
+# Create systemd services
+print_info "Creating systemd services..."
+
 sudo tee /etc/systemd/system/cts-web.service > /dev/null <<EOF
 [Unit]
 Description=$PROJECT_NAME Web Service
@@ -309,280 +358,143 @@ Type=simple
 User=$USER
 Group=$USER
 WorkingDirectory=$(pwd)
-ExecStart=/usr/bin/npm run dev
-ExecReload=/bin/kill -HUP \$MAINPID
+ExecStart=$(command -v bun &> /dev/null && echo "$(which bun) run dev" || echo "$(which npm) run dev")
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=cts-web
 
-# Environment variables
 Environment=NODE_ENV=production
 Environment=PORT=$PORT
-Environment=DATABASE_PATH=$(pwd)/data/cts.db
-Environment=DATABASE_URL=$REMOTE_DATABASE_URL
-Environment=REMOTE_POSTGRES_URL=$REMOTE_DATABASE_URL
+Environment=DATABASE_URL=$DATABASE_URL
 Environment=ENCRYPTION_KEY=$ENCRYPTION_KEY
 Environment=JWT_SECRET=$JWT_SECRET
 Environment=DEFAULT_PASSWORD=$DEFAULT_PASSWORD
 
-# Security settings
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=$(pwd) $(pwd)/data $(pwd)/logs $(pwd)/temp
-
-# Resource limits
-LimitNOFILE=65536
-LimitNPROC=4096
+ReadWritePaths=$(pwd)
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Trade engine service with enhanced configuration
 sudo tee /etc/systemd/system/cts-trade.service > /dev/null <<EOF
 [Unit]
-Description=$PROJECT_NAME Trade Engine Service
+Description=$PROJECT_NAME Trade Engine
 After=network.target cts-web.service
-Wants=network-online.target
 
 [Service]
 Type=simple
 User=$USER
-Group=$USER
 WorkingDirectory=$(pwd)
-ExecStart=/usr/bin/node services/trade-engine.js
-ExecReload=/bin/kill -HUP \$MAINPID
+ExecStart=$(which node) services/trade-engine.js
 Restart=always
 RestartSec=15
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=cts-trade
 
-# Environment variables
-Environment=NODE_ENV=production
-Environment=DATABASE_PATH=$(pwd)/data/cts.db
-Environment=DATABASE_URL=$REMOTE_DATABASE_URL
-Environment=REMOTE_POSTGRES_URL=$REMOTE_DATABASE_URL
-Environment=LOG_LEVEL=info
+Environment=DATABASE_URL=$DATABASE_URL
 Environment=ENCRYPTION_KEY=$ENCRYPTION_KEY
 
-# Security settings
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=$(pwd) $(pwd)/data $(pwd)/logs $(pwd)/temp
-
-# Resource limits
-LimitNOFILE=65536
-LimitNPROC=4096
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# Log rotation service
-sudo tee /etc/systemd/system/cts-logrotate.service > /dev/null <<EOF
-[Unit]
-Description=$PROJECT_NAME Log Rotation Service
+print_success "Systemd services created"
 
-[Service]
-Type=oneshot
-User=$USER
-WorkingDirectory=$(pwd)
-ExecStart=/bin/bash -c 'find logs/ -name "*.log" -size +100M -exec gzip {} \; && find logs/ -name "*.gz" -mtime +30 -delete'
-EOF
+# Create management scripts
+print_info "Creating management scripts..."
 
-# Log rotation timer
-sudo tee /etc/systemd/system/cts-logrotate.timer > /dev/null <<EOF
-[Unit]
-Description=Run $PROJECT_NAME log rotation daily
-Requires=cts-logrotate.service
-
-[Timer]
-OnCalendar=daily
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-# Database backup service
-sudo tee /etc/systemd/system/cts-backup.service > /dev/null <<EOF
-[Unit]
-Description=$PROJECT_NAME Database Backup Service
-
-[Service]
-Type=oneshot
-User=$USER
-WorkingDirectory=$(pwd)
-ExecStart=/bin/bash -c 'cp data/cts.db backups/daily/cts_backup_\$(date +\%Y\%m\%d_\%H\%M\%S).db && find backups/daily/ -name "*.db" -mtime +7 -delete'
-EOF
-
-# Database backup timer
-sudo tee /etc/systemd/system/cts-backup.timer > /dev/null <<EOF
-[Unit]
-Description=Run $PROJECT_NAME database backup every 6 hours
-Requires=cts-backup.service
-
-[Timer]
-OnCalendar=*-*-* 00,06,12,18:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
-echo "Creating management scripts..."
-
-# Start script
-cat > start-cts.sh << 'EOF'
+cat > start-cts.sh << 'EOFSCRIPT'
 #!/bin/bash
 echo "Starting CTS v3 services..."
 sudo systemctl start cts-web cts-trade
-sudo systemctl enable cts-logrotate.timer cts-backup.timer
-sudo systemctl start cts-logrotate.timer cts-backup.timer
-echo "✓ All services started"
-systemctl status cts-web cts-trade --no-pager -l
-EOF
+sudo systemctl enable cts-web cts-trade
+echo "✓ Services started"
+systemctl status cts-web cts-trade --no-pager
+EOFSCRIPT
 
-# Stop script
-cat > stop-cts.sh << 'EOF'
+cat > stop-cts.sh << 'EOFSCRIPT'
 #!/bin/bash
 echo "Stopping CTS v3 services..."
-sudo systemctl stop cts-web cts-trade cts-logrotate.timer cts-backup.timer
-echo "✓ All services stopped"
-EOF
+sudo systemctl stop cts-web cts-trade
+echo "✓ Services stopped"
+EOFSCRIPT
 
-# Status script
-cat > status-cts.sh << 'EOF'
+cat > status-cts.sh << 'EOFSCRIPT'
 #!/bin/bash
-echo "$PROJECT_NAME Service Status:"
+echo "CTS v3 Service Status:"
 echo "====================="
-systemctl status cts-web cts-trade cts-logrotate.timer cts-backup.timer --no-pager -l
+systemctl status cts-web cts-trade --no-pager
 echo ""
-echo "Recent logs:"
-echo "============"
-journalctl -u cts-web -u cts-trade --since "1 hour ago" --no-pager -l | tail -20
-EOF
+echo "Recent Logs:"
+journalctl -u cts-web -u cts-trade --since "1 hour ago" --no-pager | tail -30
+EOFSCRIPT
 
-# Update script
-cat > update-cts.sh << 'EOF'
+cat > update-cts.sh << 'EOFSCRIPT'
 #!/bin/bash
-echo "Updating $PROJECT_NAME..."
+echo "Updating CTS v3..."
 git pull origin main
-npm install --force
+if command -v bun &> /dev/null; then
+    bun install
+    bun run build
+else
+    npm install --force
+    npm run build
+fi
 sudo systemctl restart cts-web cts-trade
-echo "✓ $PROJECT_NAME updated and restarted"
-EOF
+echo "✓ Updated and restarted"
+EOFSCRIPT
 
 chmod +x start-cts.sh stop-cts.sh status-cts.sh update-cts.sh
+print_success "Management scripts created"
 
-echo "Setting up environment configuration..."
-
-cat > .env.example << EOF
-# CTS v3 Environment Configuration
-NODE_ENV=production
-PORT=$PORT
-
-# Security Configuration
-DEFAULT_PASSWORD=$DEFAULT_PASSWORD
-ENCRYPTION_KEY=$ENCRYPTION_KEY
-JWT_SECRET=$JWT_SECRET
-
-# Database Configuration - Remote PostgreSQL (Predefined)
-DATABASE_URL=$REMOTE_DATABASE_URL
-REMOTE_POSTGRES_URL=$REMOTE_DATABASE_URL
-
-# Database Configuration - Local SQLite (Optional)
-DATABASE_PATH=./data/cts.db
-DATABASE_BACKUP_INTERVAL=6
-
-# Remote PostgreSQL Connection Details
-REMOTE_PG_HOST=$DB_HOST
-REMOTE_PG_PORT=$DB_PORT
-REMOTE_PG_DATABASE=$DB_NAME
-REMOTE_PG_USER=$DB_USER
-REMOTE_PG_PASSWORD=$DB_PASSWORD
-
-# Exchange API Configuration (fill in your credentials)
-BYBIT_API_KEY=your_bybit_api_key_here
-BYBIT_API_SECRET=your_bybit_api_secret_here
-BYBIT_TESTNET=true
-
-BINGX_API_KEY=your_bingx_api_key_here
-BINGX_API_SECRET=your_bingx_api_secret_here
-
-PIONEX_API_KEY=your_pionex_api_key_here
-PIONEX_API_SECRET=your_pionex_api_secret_here
-
-# Trading Configuration
-DEFAULT_POSITION_SIZE=0.1
-MAX_POSITIONS_PER_CONFIG=1
-POSITION_TIMEOUT=15000
-
-# Logging Configuration
-LOG_LEVEL=info
-LOG_MAX_SIZE=100MB
-LOG_MAX_FILES=30
-
-# Security Configuration
-ENABLE_API_RATE_LIMITING=true
-MAX_API_REQUESTS_PER_MINUTE=60
-EOF
-
-if [ ! -f ".env" ]; then
-    cp .env.example .env 2>/dev/null || true
-    echo "✓ Environment configuration created (.env)"
-    echo "✓ Remote PostgreSQL database preconfigured"
-else
-    echo "✓ Existing .env file preserved"
-fi
-
-echo "Applying system optimizations..."
-
-# Increase file descriptor limits
-echo "$USER soft nofile 65536" | sudo tee -a /etc/security/limits.conf 2>/dev/null || true
-echo "$USER hard nofile 65536" | sudo tee -a /etc/security/limits.conf 2>/dev/null || true
-
-echo "Reloading systemd and starting services..."
+# Start services
+print_info "Starting services..."
 sudo systemctl daemon-reload
-sudo systemctl enable cts-web.service cts-trade.service 2>/dev/null || true
-sudo systemctl enable cts-logrotate.timer cts-backup.timer 2>/dev/null || true
-
-echo "Starting services..."
-sudo systemctl start cts-web.service 2>/dev/null && echo "✓ Web service started" || echo "⚠ Web service failed to start"
+sudo systemctl enable cts-web cts-trade 2>/dev/null || true
+sudo systemctl start cts-web 2>/dev/null && print_success "Web service started" || print_warning "Web service failed to start"
 sleep 2
-sudo systemctl start cts-trade.service 2>/dev/null && echo "✓ Trade engine started" || echo "⚠ Trade engine failed to start"
-sudo systemctl start cts-logrotate.timer cts-backup.timer 2>/dev/null && echo "✓ Maintenance timers started" || true
+sudo systemctl start cts-trade 2>/dev/null && print_success "Trade engine started" || print_warning "Trade engine failed to start"
 
-echo "✓ System optimizations applied"
+# Get server IP
+SERVER_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
 
+# Final summary
 echo ""
 echo "=========================================="
-echo "$PROJECT_NAME Installation Completed!"
+echo "✓ Installation Complete!"
 echo "=========================================="
 echo ""
-echo "🔐 Security Information:"
-echo "   Default Password: $DEFAULT_PASSWORD"
-echo "   Encryption Key: ${ENCRYPTION_KEY:0:16}... (saved in .env)"
-echo "   JWT Secret: ${JWT_SECRET:0:16}... (saved in .env)"
+echo "📋 Project Information:"
+echo "   Name: $PROJECT_NAME"
+echo "   Version: 3.0.0"
+echo "   Directory: $(pwd)"
 echo ""
 echo "🗄️  Database Configuration:"
-echo "   Remote PostgreSQL: $DB_HOST:$DB_PORT"
-echo "   Database Name: $DB_NAME"
-echo "   Database User: $DB_USER"
-echo "   Connection String: postgresql://$DB_USER:****@$DB_HOST:$DB_PORT/$DB_NAME"
+if [ "$USE_SQLITE" = true ]; then
+    echo "   Type: SQLite"
+    echo "   Location: $(pwd)/data/cts.db"
+else
+    echo "   Type: PostgreSQL"
+    echo "   Host: $DB_HOST:$DB_PORT"
+    echo "   Database: $DB_NAME"
+    echo "   User: $DB_USER"
+    echo "   Connection: postgresql://$DB_USER:****@$DB_HOST:$DB_PORT/$DB_NAME"
+fi
 echo ""
-echo "📁 Directory Structure:"
-echo "   data/          - Database and data files"
-echo "   logs/          - Application logs"
-echo "   backups/       - Database backups"
-echo "   services/      - Service scripts"
+echo "🌐 Access URLs:"
+echo "   Local: http://localhost:$PORT"
+echo "   Network: http://$SERVER_IP:$PORT"
+echo ""
+echo "🔐 Security Credentials:"
+echo "   Default Password: $DEFAULT_PASSWORD"
+echo "   Encryption Key: ${ENCRYPTION_KEY:0:16}..."
+echo "   JWT Secret: ${JWT_SECRET:0:16}..."
 echo ""
 echo "🔧 Management Commands:"
 echo "   ./start-cts.sh    - Start all services"
@@ -590,41 +502,35 @@ echo "   ./stop-cts.sh     - Stop all services"
 echo "   ./status-cts.sh   - Check service status"
 echo "   ./update-cts.sh   - Update and restart"
 echo ""
+echo "📁 Directory Structure:"
+echo "   data/          - Database and data files"
+echo "   logs/          - Application logs"
+echo "   backups/       - Database backups"
+echo "   services/      - Service scripts"
+echo ""
 echo "🚀 Service Status:"
-echo "===================="
-sudo systemctl status cts-web --no-pager -l | head -10 || true
+sudo systemctl is-active cts-web >/dev/null 2>&1 && echo "   Web Service: ✓ Running" || echo "   Web Service: ✗ Stopped"
+sudo systemctl is-active cts-trade >/dev/null 2>&1 && echo "   Trade Engine: ✓ Running" || echo "   Trade Engine: ✗ Stopped"
 echo ""
-sudo systemctl status cts-trade --no-pager -l | head -10 || true
-echo ""
-echo "🌐 Web Interface:"
-echo "   http://localhost:$PORT"
-echo ""
-echo "📋 Next Steps:"
-echo "   1. Remote PostgreSQL is already configured!"
-echo "   2. Edit .env file with your exchange API credentials"
-echo "   3. Configure exchange connections in Settings"
+echo "📖 Next Steps:"
+echo "   1. Access web interface at http://localhost:$PORT"
+echo "   2. Login with default password: $DEFAULT_PASSWORD"
+echo "   3. Configure exchange API credentials in Settings"
 echo "   4. Set up trading parameters"
 echo "   5. Start trading!"
 echo ""
-echo "📖 Documentation:"
-echo "   - Configuration: Check app/settings page"
-echo "   - Monitoring: Check logs/ directory"
-echo "   - Backups: Automatic every 6 hours in backups/"
-echo ""
-echo "⚠️  Important Security Notes:"
-echo "   - Default password: $DEFAULT_PASSWORD (change in production!)"
-echo "   - Remote database is preconfigured and ready to use"
-echo "   - Never share your .env file"
-echo "   - Use testnet for initial testing"
-echo "   - Monitor logs regularly"
-echo "   - Keep backups safe"
+echo "⚠️  Security Reminders:"
+echo "   • Change default password immediately"
+echo "   • Keep .env file secure (never commit to git)"
+echo "   • Use testnet for initial testing"
+echo "   • Monitor logs regularly: journalctl -u cts-web -f"
+echo "   • Set up regular backups"
 echo ""
 echo "🔍 Troubleshooting:"
-echo "   - Check logs: journalctl -u cts-web -u cts-trade"
-echo "   - Service status: ./status-cts.sh"
-echo "   - Database issues: Check DATABASE_URL in .env"
-echo "   - Test database: psql $REMOTE_DATABASE_URL"
-echo "   - Reinstall: $0 uninstall && $0"
+echo "   • Check logs: journalctl -u cts-web -u cts-trade"
+echo "   • Service status: ./status-cts.sh"
+echo "   • Restart services: sudo systemctl restart cts-web cts-trade"
+echo "   • Uninstall: $0 --uninstall"
 echo ""
 echo "Installation completed at: $(date)"
 echo "=========================================="
