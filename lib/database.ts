@@ -3,6 +3,7 @@ import path from "path"
 const { neon } = require("@neondatabase/serverless")
 const fs = require("fs")
 
+const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build"
 const isNeon = !!process.env.DATABASE_URL
 
 const MAX_RETRIES = 3
@@ -38,8 +39,8 @@ class DatabaseManager {
   private initialized = false
 
   private constructor() {
-    // Don't initialize database during build time
-    if (process.env.NEXT_PHASE === "phase-production-build") {
+    if (isBuildPhase) {
+      console.log("[v0] Skipping database initialization during build phase")
       return
     }
 
@@ -84,7 +85,7 @@ class DatabaseManager {
   }
 
   private async initializeTables() {
-    if (this.initialized) return
+    if (isBuildPhase || this.initialized) return
 
     try {
       await retryWithBackoff(async () => {

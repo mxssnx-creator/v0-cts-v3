@@ -2,27 +2,40 @@ import { neon } from "@neondatabase/serverless"
 
 const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.REMOTE_POSTGRES_URL
 
-if (!DATABASE_URL) {
-  throw new Error("[v0] DATABASE_URL environment variable is required for PostgreSQL database")
+let sqlClient: ReturnType<typeof neon> | null = null
+
+function getClient() {
+  // Skip database initialization during build
+  if (process.env.NEXT_PHASE === "phase-production-build") {
+    throw new Error("[v0] Database not available during build phase")
+  }
+
+  if (!DATABASE_URL) {
+    throw new Error("[v0] DATABASE_URL environment variable is required for PostgreSQL database")
+  }
+
+  if (!sqlClient) {
+    const dbType = process.env.DATABASE_TYPE || "neon"
+    console.log(`[v0] Initializing ${dbType} PostgreSQL database client...`)
+
+    sqlClient = neon(DATABASE_URL, {
+      fetchOptions: {
+        cache: "no-store",
+      },
+    })
+
+    console.log(`[v0] ${dbType} PostgreSQL database client initialized successfully`)
+  }
+
+  return sqlClient
 }
-
-const dbType = process.env.DATABASE_TYPE || "neon"
-console.log(`[v0] Initializing ${dbType} PostgreSQL database client...`)
-
-// Initialize Neon client (works for both Neon and standard PostgreSQL)
-const sqlClient = neon(DATABASE_URL, {
-  fetchOptions: {
-    cache: "no-store",
-  },
-})
-
-console.log(`[v0] ${dbType} PostgreSQL database client initialized successfully`)
 
 export async function query<T = any>(queryText: string, params: any[] = []): Promise<T[]> {
   try {
     console.log("[v0] Executing query:", { query: queryText.substring(0, 100), paramCount: params.length })
 
-    const result = await sqlClient(queryText, params)
+    const client = getClient()
+    const result = await client(queryText, params)
     return (result as any[]) || []
   } catch (error) {
     console.error("[v0] Database query error:", error)
@@ -34,7 +47,8 @@ export async function query<T = any>(queryText: string, params: any[] = []): Pro
 
 export async function queryOne<T = any>(queryText: string, params: any[] = []): Promise<T | null> {
   try {
-    const result = await sqlClient(queryText, params)
+    const client = getClient()
+    const result = await client(queryText, params)
     const rows = result as any[]
     return (rows[0] as T) || null
   } catch (error) {
@@ -47,7 +61,8 @@ export async function execute(queryText: string, params: any[] = []): Promise<{ 
   try {
     console.log("[v0] Executing command:", { query: queryText.substring(0, 100), paramCount: params.length })
 
-    const result = await sqlClient(queryText, params)
+    const client = getClient()
+    const result = await client(queryText, params)
     const rows = result as any[]
 
     return { rowCount: rows.length || 0 }
@@ -61,7 +76,8 @@ export async function execute(queryText: string, params: any[] = []): Promise<{ 
 
 export async function insertReturning<T = any>(queryText: string, params: any[] = []): Promise<T | null> {
   try {
-    const result = await sqlClient(queryText, params)
+    const client = getClient()
+    const result = await client(queryText, params)
     const rows = result as any[]
     return (rows[0] as T) || null
   } catch (error) {
@@ -79,10 +95,11 @@ export const sql = async (strings: TemplateStringsArray, ...values: any[]) => {
     params.push(values[i])
   }
 
-  const result = await sqlClient(queryText, params)
+  const client = getClient()
+  const result = await client(queryText, params)
   return result as any[]
 }
 
-// Export the client for direct access if needed
-export default sqlClient
-export const db = sqlClient
+export const db = getClient
+export const getDb = getClient
+export default getClient
