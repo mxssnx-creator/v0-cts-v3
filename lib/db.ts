@@ -1,8 +1,8 @@
-import { neon } from "@neondatabase/serverless"
+import { Pool } from "pg"
 
 const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || process.env.REMOTE_POSTGRES_URL
 
-let sqlClient: ReturnType<typeof neon> | null = null
+let sqlClient: Pool | null = null
 
 function getClient() {
   // Skip database initialization during build
@@ -15,13 +15,14 @@ function getClient() {
   }
 
   if (!sqlClient) {
-    const dbType = process.env.DATABASE_TYPE || "neon"
+    const dbType = process.env.DATABASE_TYPE || "postgresql"
     console.log(`[v0] Initializing ${dbType} PostgreSQL database client...`)
 
-    sqlClient = neon(DATABASE_URL, {
-      fetchOptions: {
-        cache: "no-store",
-      },
+    sqlClient = new Pool({
+      connectionString: DATABASE_URL,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
     })
 
     console.log(`[v0] ${dbType} PostgreSQL database client initialized successfully`)
@@ -35,8 +36,8 @@ export async function query<T = any>(queryText: string, params: any[] = []): Pro
     console.log("[v0] Executing query:", { query: queryText.substring(0, 100), paramCount: params.length })
 
     const client = getClient()
-    const result = await client(queryText, params)
-    return (result as any[]) || []
+    const result = await client.query(queryText, params)
+    return result.rows as T[]
   } catch (error) {
     console.error("[v0] Database query error:", error)
     console.error("[v0] Query:", queryText)
@@ -48,9 +49,8 @@ export async function query<T = any>(queryText: string, params: any[] = []): Pro
 export async function queryOne<T = any>(queryText: string, params: any[] = []): Promise<T | null> {
   try {
     const client = getClient()
-    const result = await client(queryText, params)
-    const rows = result as any[]
-    return (rows[0] as T) || null
+    const result = await client.query(queryText, params)
+    return (result.rows[0] as T) || null
   } catch (error) {
     console.error("[v0] Database queryOne error:", error)
     throw error
@@ -62,10 +62,9 @@ export async function execute(queryText: string, params: any[] = []): Promise<{ 
     console.log("[v0] Executing command:", { query: queryText.substring(0, 100), paramCount: params.length })
 
     const client = getClient()
-    const result = await client(queryText, params)
-    const rows = result as any[]
+    const result = await client.query(queryText, params)
 
-    return { rowCount: rows.length || 0 }
+    return { rowCount: result.rowCount || 0 }
   } catch (error) {
     console.error("[v0] Database execute error:", error)
     console.error("[v0] Query:", queryText)
@@ -77,9 +76,8 @@ export async function execute(queryText: string, params: any[] = []): Promise<{ 
 export async function insertReturning<T = any>(queryText: string, params: any[] = []): Promise<T | null> {
   try {
     const client = getClient()
-    const result = await client(queryText, params)
-    const rows = result as any[]
-    return (rows[0] as T) || null
+    const result = await client.query(queryText, params)
+    return (result.rows[0] as T) || null
   } catch (error) {
     console.error("[v0] Database insertReturning error:", error)
     throw error
@@ -96,8 +94,8 @@ export const sql = async (strings: TemplateStringsArray, ...values: any[]) => {
   }
 
   const client = getClient()
-  const result = await client(queryText, params)
-  return result as any[]
+  const result = await client.query(queryText, params)
+  return result.rows
 }
 
 export const db = getClient

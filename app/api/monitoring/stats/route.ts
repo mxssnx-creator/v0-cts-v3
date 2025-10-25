@@ -3,12 +3,13 @@ import { query } from "@/lib/db"
 
 export async function GET() {
   try {
-    const isNeon = !!process.env.DATABASE_URL
+    const databaseUrl = process.env.DATABASE_URL || process.env.REMOTE_POSTGRES_URL || ""
+    const isPostgreSQL = databaseUrl.startsWith("postgresql://")
 
     let logStats, errorRate, topErrors, criticalErrors
 
-    if (isNeon) {
-      // PostgreSQL/Neon syntax
+    if (isPostgreSQL) {
+      // PostgreSQL syntax
       logStats = await query(`
         SELECT 
           level,

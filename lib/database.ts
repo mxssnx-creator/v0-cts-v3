@@ -1,10 +1,10 @@
 import Database from "better-sqlite3"
 import path from "path"
-const { neon } = require("@neondatabase/serverless")
+import { Pool } from "pg"
 const fs = require("fs")
 
 const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build"
-const isNeon = !!process.env.DATABASE_URL
+const isPostgreSQL = !!process.env.DATABASE_URL
 
 const MAX_RETRIES = 3
 const INITIAL_RETRY_DELAY = 1000 // 1 second
@@ -35,7 +35,7 @@ async function retryWithBackoff<T>(
 class DatabaseManager {
   private db: any
   private static instance: DatabaseManager
-  private sqlClient: any
+  private sqlClient: Pool | null = null
   private initialized = false
 
   private constructor() {
@@ -44,12 +44,12 @@ class DatabaseManager {
       return
     }
 
-    if (isNeon) {
-      // Note: Ensure DATABASE_URL includes "-pooler" for connection pooling
-      this.sqlClient = neon(process.env.DATABASE_URL!, {
-        fetchOptions: {
-          cache: "no-store",
-        },
+    if (isPostgreSQL) {
+      this.sqlClient = new Pool({
+        connectionString: process.env.DATABASE_URL!,
+        max: 20,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 2000,
       })
     } else {
       // Use SQLite for local development
@@ -65,12 +65,12 @@ class DatabaseManager {
         this.initializeTables()
       } catch (error) {
         console.error("[v0] SQLite initialization failed:", error)
-        // Fallback to Neon if SQLite fails
         if (process.env.DATABASE_URL) {
-          this.sqlClient = neon(process.env.DATABASE_URL!, {
-            fetchOptions: {
-              cache: "no-store",
-            },
+          this.sqlClient = new Pool({
+            connectionString: process.env.DATABASE_URL!,
+            max: 20,
+            idleTimeoutMillis: 30000,
+            connectionTimeoutMillis: 2000,
           })
         }
       }
@@ -92,8 +92,8 @@ class DatabaseManager {
         if (!this.db && !this.sqlClient) return
 
         // Exchange connections table
-        if (isNeon) {
-          await this.sqlClient.query(`
+        if (isPostgreSQL) {
+          await this.sqlClient!.query(`
             CREATE TABLE IF NOT EXISTS exchange_connections (
               id TEXT PRIMARY KEY,
               name TEXT NOT NULL,
@@ -125,8 +125,8 @@ class DatabaseManager {
         }
 
         // Pseudo positions table
-        if (isNeon) {
-          await this.sqlClient.query(`
+        if (isPostgreSQL) {
+          await this.sqlClient!.query(`
             CREATE TABLE IF NOT EXISTS pseudo_positions (
               id TEXT PRIMARY KEY,
               connection_id TEXT NOT NULL,
@@ -172,8 +172,8 @@ class DatabaseManager {
         }
 
         // Real positions table
-        if (isNeon) {
-          await this.sqlClient.query(`
+        if (isPostgreSQL) {
+          await this.sqlClient!.query(`
             CREATE TABLE IF NOT EXISTS real_positions (
               id TEXT PRIMARY KEY,
               connection_id TEXT NOT NULL,
@@ -215,8 +215,8 @@ class DatabaseManager {
         }
 
         // Market data table
-        if (isNeon) {
-          await this.sqlClient.query(`
+        if (isPostgreSQL) {
+          await this.sqlClient!.query(`
             CREATE TABLE IF NOT EXISTS market_data (
               id SERIAL PRIMARY KEY,
               connection_id TEXT NOT NULL,
@@ -240,8 +240,8 @@ class DatabaseManager {
         }
 
         // System settings table
-        if (isNeon) {
-          await this.sqlClient.query(`
+        if (isPostgreSQL) {
+          await this.sqlClient!.query(`
             CREATE TABLE IF NOT EXISTS system_settings (
               key TEXT PRIMARY KEY,
               value TEXT NOT NULL,
@@ -259,8 +259,8 @@ class DatabaseManager {
         }
 
         // Logs table
-        if (isNeon) {
-          await this.sqlClient.query(`
+        if (isPostgreSQL) {
+          await this.sqlClient!.query(`
             CREATE TABLE IF NOT EXISTS logs (
               id SERIAL PRIMARY KEY,
               level TEXT NOT NULL,
@@ -284,8 +284,8 @@ class DatabaseManager {
         }
 
         // Errors table
-        if (isNeon) {
-          await this.sqlClient.query(`
+        if (isPostgreSQL) {
+          await this.sqlClient!.query(`
             CREATE TABLE IF NOT EXISTS errors (
               id SERIAL PRIMARY KEY,
               type TEXT NOT NULL,
@@ -399,10 +399,10 @@ class DatabaseManager {
       { key: "testnet", value: "false" },
     ]
 
-    if (isNeon) {
+    if (isPostgreSQL) {
       await Promise.all(
         defaultSettings.map(async (setting) => {
-          await this.sqlClient.query(
+          await this.sqlClient!.query(
             `
             INSERT INTO system_settings (key, value) VALUES ($1, $2)
             ON CONFLICT (key) DO NOTHING
@@ -424,10 +424,10 @@ class DatabaseManager {
 
   // Connection methods
   public async insertConnection(connection: any) {
-    if (isNeon) {
-      return await this.sqlClient.query(
+    if (isPostgreSQL) {
+      const result = await this.sqlClient!.query(
         `INSERT INTO exchange_connections (id, name, exchange, api_type, connection_method, api_key, api_secret)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
         [
           connection.id,
           connection.name,
@@ -438,6 +438,7 @@ class DatabaseManager {
           connection.api_secret,
         ],
       )
+      return result.rows[0]
     } else {
       const stmt = this.db.prepare(`
         INSERT INTO exchange_connections (id, name, exchange, api_type, connection_method, api_key, api_secret)
@@ -456,8 +457,8 @@ class DatabaseManager {
   }
 
   public async getConnections() {
-    if (isNeon) {
-      const result = await this.sqlClient.query("SELECT * FROM exchange_connections ORDER BY created_at DESC")
+    if (isPostgreSQL) {
+      const result = await this.sqlClient!.query("SELECT * FROM exchange_connections ORDER BY created_at DESC")
       return result.rows
     } else {
       const stmt = this.db.prepare("SELECT * FROM exchange_connections ORDER BY created_at DESC")
@@ -466,13 +467,14 @@ class DatabaseManager {
   }
 
   public async updateConnectionStatus(id: string, is_enabled: boolean, is_live_trade: boolean) {
-    if (isNeon) {
-      return await this.sqlClient.query(
+    if (isPostgreSQL) {
+      const result = await this.sqlClient!.query(
         `UPDATE exchange_connections 
         SET is_enabled = $1, is_live_trade = $2, updated_at = CURRENT_TIMESTAMP 
-        WHERE id = $3`,
+        WHERE id = $3 RETURNING *`,
         [is_enabled, is_live_trade, id],
       )
+      return result.rows[0]
     } else {
       const stmt = this.db.prepare(`
         UPDATE exchange_connections 
@@ -485,8 +487,8 @@ class DatabaseManager {
 
   // Pseudo position methods
   public async insertPseudoPosition(position: any) {
-    if (isNeon) {
-      return await this.sqlClient.query(
+    if (isPostgreSQL) {
+      return await this.sqlClient!.query(
         `INSERT INTO pseudo_positions 
         (id, connection_id, symbol, indication_type, takeprofit_factor, stoploss_ratio, 
          trailing_enabled, trail_start, trail_stop, entry_price, current_price, profit_factor, position_cost)
@@ -533,7 +535,7 @@ class DatabaseManager {
   }
 
   public async getPseudoPositions(connection_id?: string, limit = 250) {
-    if (isNeon) {
+    if (isPostgreSQL) {
       let query = "SELECT * FROM pseudo_positions WHERE status = $1"
       const params: any[] = ["active"]
 
@@ -547,7 +549,7 @@ class DatabaseManager {
         params.push(limit)
       }
 
-      const result = await this.sqlClient.query(query, params)
+      const result = await this.sqlClient!.query(query, params)
       return result.rows
     } else {
       let query = 'SELECT * FROM pseudo_positions WHERE status = "active"'
@@ -568,8 +570,8 @@ class DatabaseManager {
 
   // Real position methods
   public async insertRealPosition(position: any) {
-    if (isNeon) {
-      return await this.sqlClient.query(
+    if (isPostgreSQL) {
+      return await this.sqlClient!.query(
         `INSERT INTO real_positions 
         (id, connection_id, exchange_position_id, symbol, strategy_type, volume, 
          entry_price, current_price, takeprofit, stoploss, profit_loss)
@@ -612,7 +614,7 @@ class DatabaseManager {
   }
 
   public async getRealPositions(connection_id?: string) {
-    if (isNeon) {
+    if (isPostgreSQL) {
       let query = "SELECT * FROM real_positions WHERE status = $1"
       const params: any[] = ["open"]
 
@@ -623,7 +625,7 @@ class DatabaseManager {
 
       query += " ORDER BY opened_at DESC"
 
-      const result = await this.sqlClient.query(query, params)
+      const result = await this.sqlClient!.query(query, params)
       return result.rows
     } else {
       let query = 'SELECT * FROM real_positions WHERE status = "open"'
@@ -643,8 +645,8 @@ class DatabaseManager {
 
   // Settings methods
   public async getSetting(key: string): Promise<string | null> {
-    if (isNeon) {
-      const result = await this.sqlClient.query("SELECT value FROM system_settings WHERE key = $1", [key])
+    if (isPostgreSQL) {
+      const result = await this.sqlClient!.query("SELECT value FROM system_settings WHERE key = $1", [key])
       return result.rows[0]?.value || null
     } else {
       const stmt = this.db.prepare("SELECT value FROM system_settings WHERE key = ?")
@@ -654,13 +656,15 @@ class DatabaseManager {
   }
 
   public async setSetting(key: string, value: string) {
-    if (isNeon) {
-      return await this.sqlClient.query(
+    if (isPostgreSQL) {
+      const result = await this.sqlClient!.query(
         `INSERT INTO system_settings (key, value, updated_at) 
         VALUES ($1, $2, CURRENT_TIMESTAMP)
-        ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = CURRENT_TIMESTAMP`,
+        ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = CURRENT_TIMESTAMP
+        RETURNING *`,
         [key, value],
       )
+      return result.rows[0]
     } else {
       const stmt = this.db.prepare(`
         INSERT OR REPLACE INTO system_settings (key, value, updated_at) 
@@ -671,8 +675,8 @@ class DatabaseManager {
   }
 
   public async getAllSettings(): Promise<Record<string, string>> {
-    if (isNeon) {
-      const result = await this.sqlClient.query("SELECT key, value FROM system_settings")
+    if (isPostgreSQL) {
+      const result = await this.sqlClient!.query("SELECT key, value FROM system_settings")
       const settings: Record<string, string> = {}
       result.rows.forEach((row: any) => {
         settings[row.key] = row.value
@@ -691,8 +695,8 @@ class DatabaseManager {
 
   // Market data methods
   public async insertMarketData(connection_id: string, symbol: string, price: number) {
-    if (isNeon) {
-      return await this.sqlClient.query(`INSERT INTO market_data (connection_id, symbol, price) VALUES ($1, $2, $3)`, [
+    if (isPostgreSQL) {
+      return await this.sqlClient!.query(`INSERT INTO market_data (connection_id, symbol, price) VALUES ($1, $2, $3)`, [
         connection_id,
         symbol,
         price,
@@ -706,8 +710,8 @@ class DatabaseManager {
   }
 
   public async getMarketData(connection_id: string, symbol: string, hours = 24) {
-    if (isNeon) {
-      const result = await this.sqlClient.query(
+    if (isPostgreSQL) {
+      const result = await this.sqlClient!.query(
         `SELECT * FROM market_data 
         WHERE connection_id = $1 AND symbol = $2 
         AND timestamp > NOW() - INTERVAL '${hours} hours'
@@ -728,8 +732,8 @@ class DatabaseManager {
 
   // Logging methods for monitoring
   public async insertLog(level: string, category: string, message: string, details?: string) {
-    if (isNeon) {
-      return await this.sqlClient.query(
+    if (isPostgreSQL) {
+      return await this.sqlClient!.query(
         `INSERT INTO logs (level, category, message, details) VALUES ($1, $2, $3, $4)`,
         [level, category, message, details || null],
       )
@@ -742,7 +746,7 @@ class DatabaseManager {
   }
 
   public async getLogs(limit = 100, level?: string, category?: string) {
-    if (isNeon) {
+    if (isPostgreSQL) {
       let query = "SELECT * FROM logs WHERE 1=1"
       const params: any[] = []
 
@@ -759,7 +763,7 @@ class DatabaseManager {
       query += " ORDER BY timestamp DESC LIMIT $" + (params.length + 1)
       params.push(limit)
 
-      const result = await this.sqlClient.query(query, params)
+      const result = await this.sqlClient!.query(query, params)
       return result.rows
     } else {
       let query = "SELECT * FROM logs WHERE 1=1"
@@ -784,8 +788,8 @@ class DatabaseManager {
   }
 
   public async clearOldLogs(days = 7) {
-    if (isNeon) {
-      return await this.sqlClient.query(`
+    if (isPostgreSQL) {
+      return await this.sqlClient!.query(`
         DELETE FROM logs WHERE timestamp < NOW() - INTERVAL '${days} days'
       `)
     } else {
@@ -797,8 +801,8 @@ class DatabaseManager {
   }
 
   public async insertError(type: string, message: string, stack?: string, context?: string) {
-    if (isNeon) {
-      return await this.sqlClient.query(`INSERT INTO errors (type, message, stack, context) VALUES ($1, $2, $3, $4)`, [
+    if (isPostgreSQL) {
+      return await this.sqlClient!.query(`INSERT INTO errors (type, message, stack, context) VALUES ($1, $2, $3, $4)`, [
         type,
         message,
         stack || null,
@@ -813,8 +817,8 @@ class DatabaseManager {
   }
 
   public async getErrors(limit = 50, resolved = false) {
-    if (isNeon) {
-      const result = await this.sqlClient.query(
+    if (isPostgreSQL) {
+      const result = await this.sqlClient!.query(
         `SELECT * FROM errors WHERE resolved = $1 ORDER BY timestamp DESC LIMIT $2`,
         [resolved, limit],
       )
@@ -828,8 +832,8 @@ class DatabaseManager {
   }
 
   public async resolveError(id: number) {
-    if (isNeon) {
-      return await this.sqlClient.query(`UPDATE errors SET resolved = true WHERE id = $1`, [id])
+    if (isPostgreSQL) {
+      return await this.sqlClient!.query(`UPDATE errors SET resolved = true WHERE id = $1`, [id])
     } else {
       const stmt = this.db.prepare(`
         UPDATE errors SET resolved = 1 WHERE id = ?
@@ -839,8 +843,8 @@ class DatabaseManager {
   }
 
   public async clearOldErrors(days = 30) {
-    if (isNeon) {
-      return await this.sqlClient.query(`
+    if (isPostgreSQL) {
+      return await this.sqlClient!.query(`
         DELETE FROM errors WHERE resolved = true AND timestamp < NOW() - INTERVAL '${days} days'
       `)
     } else {
@@ -855,9 +859,12 @@ class DatabaseManager {
     if (this.db) {
       this.db.close()
     }
+    if (this.sqlClient) {
+      this.sqlClient.end()
+    }
   }
 }
 
 export default DatabaseManager
 
-export const db = isNeon ? null : (DatabaseManager.getInstance()["db"] as any)
+export const db = isPostgreSQL ? null : (DatabaseManager.getInstance()["db"] as any)

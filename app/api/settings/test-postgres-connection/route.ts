@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { Pool } from "pg"
 
 export const runtime = "nodejs"
 
@@ -15,14 +15,20 @@ export async function POST(request: Request) {
 
     console.log("[v0] Testing PostgreSQL connection to:", `${host}:${port}/${database}`)
 
-    const sql = neon(connectionString)
-    const result = await sql`SELECT version()`
+    const pool = new Pool({
+      connectionString,
+      max: 1,
+      connectionTimeoutMillis: 5000,
+    })
 
-    console.log("[v0] PostgreSQL connection successful:", result[0])
+    const result = await pool.query("SELECT version()")
+    await pool.end()
+
+    console.log("[v0] PostgreSQL connection successful:", result.rows[0])
 
     return NextResponse.json({
       success: true,
-      version: result[0].version,
+      version: result.rows[0].version,
       message: "Connection successful",
     })
   } catch (error) {

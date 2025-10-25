@@ -6,7 +6,13 @@ export const runtime = "nodejs"
 export async function GET() {
   try {
     const databaseUrl = process.env.DATABASE_URL || ""
-    const isConnected = !!databaseUrl
+    const remotePostgresUrl = process.env.REMOTE_POSTGRES_URL || ""
+    const isConnected = !!(databaseUrl || remotePostgresUrl)
+
+    let dbType = "sqlite"
+    if (databaseUrl.startsWith("postgresql://") || remotePostgresUrl.startsWith("postgresql://")) {
+      dbType = "postgresql"
+    }
 
     // Test the connection
     let connectionWorks = false
@@ -14,12 +20,21 @@ export async function GET() {
 
     if (isConnected) {
       try {
-        const result = await query(
-          `SELECT COUNT(*) as count 
-           FROM information_schema.tables 
-           WHERE table_schema = 'public'`,
-        )
-        tableCount = Number.parseInt(result.rows[0]?.count || "0")
+        if (dbType === "postgresql") {
+          const result = await query(
+            `SELECT COUNT(*) as count 
+             FROM information_schema.tables 
+             WHERE table_schema = 'public'`,
+          )
+          tableCount = Number.parseInt(result.rows[0]?.count || "0")
+        } else {
+          const result = await query(
+            `SELECT COUNT(*) as count 
+             FROM sqlite_master 
+             WHERE type='table'`,
+          )
+          tableCount = Number.parseInt(result.rows[0]?.count || "0")
+        }
         connectionWorks = true
       } catch (error) {
         console.error("[v0] Database connection test failed:", error)
@@ -28,32 +43,36 @@ export async function GET() {
 
     // Mask the URL for security (show only the host)
     let maskedUrl = ""
-    if (databaseUrl) {
+    const activeUrl = databaseUrl || remotePostgresUrl
+    if (activeUrl) {
       try {
-        const url = new URL(databaseUrl)
-        maskedUrl = `postgresql://*****:*****@${url.host}${url.pathname}`
+        if (activeUrl.startsWith("postgresql://")) {
+          const url = new URL(activeUrl)
+          maskedUrl = `postgresql://*****:*****@${url.host}${url.pathname}`
+        } else {
+          maskedUrl = "sqlite://./data/cts.db"
+        }
       } catch {
-        maskedUrl = "postgresql://*****:*****@*****.neon.tech/*****"
+        maskedUrl = dbType === "postgresql" ? "postgresql://*****:*****@*****/*****" : "sqlite://./data/cts.db"
       }
     }
 
     return NextResponse.json({
-      type: "neon",
+      type: dbType,
       isConfigured: isConnected,
       isConnected: connectionWorks,
       url: maskedUrl,
       tableCount,
       envVars: {
-        DATABASE_URL: isConnected,
-        POSTGRES_URL: !!process.env.POSTGRES_URL,
-        POSTGRES_PRISMA_URL: !!process.env.POSTGRES_PRISMA_URL,
+        DATABASE_URL: !!databaseUrl,
+        REMOTE_POSTGRES_URL: !!remotePostgresUrl,
       },
     })
   } catch (error) {
     console.error("[v0] Failed to get database status:", error)
     return NextResponse.json(
       {
-        type: "neon",
+        type: "unknown",
         isConfigured: false,
         isConnected: false,
         error: error instanceof Error ? error.message : "Unknown error",

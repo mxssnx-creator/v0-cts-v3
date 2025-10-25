@@ -548,13 +548,13 @@ export default function InstallManager() {
                 <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                   <span className="text-sm font-medium">Database Type:</span>
                   <Badge variant="default" className="bg-green-600">
-                    Neon PostgreSQL
+                    {process.env.DATABASE_URL ? "PostgreSQL" : "SQLite"}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
                   <span className="text-sm font-medium">Connection:</span>
-                  <Badge variant={process.env.DATABASE_URL ? "default" : "destructive"}>
-                    {process.env.DATABASE_URL ? "Connected" : "Not Connected"}
+                  <Badge variant={process.env.DATABASE_URL ? "default" : "secondary"}>
+                    {process.env.DATABASE_URL ? "Remote Connected" : "Local SQLite"}
                   </Badge>
                 </div>
                 <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
@@ -562,10 +562,9 @@ export default function InstallManager() {
                   <Badge variant="default">Enabled on Deployment</Badge>
                 </div>
                 {!process.env.DATABASE_URL && (
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-950 rounded border border-yellow-200 dark:border-yellow-800">
-                    <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                      DATABASE_URL is not configured. Please add your Neon database connection string to the environment
-                      variables.
+                  <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded border border-blue-200 dark:border-blue-800">
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      Using SQLite for local development. To use PostgreSQL, add DATABASE_URL to environment variables.
                     </p>
                   </div>
                 )}

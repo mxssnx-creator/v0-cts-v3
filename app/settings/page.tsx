@@ -1950,10 +1950,11 @@ export default function SettingsPage() {
                   <select
                     id="database-type"
                     className="w-48 px-3 py-2 border rounded-md bg-background"
-                    value={settings.database_type || "neon"}
+                    value={settings.database_type || "sqlite"}
                     onChange={(e) => handleSettingChange("database_type", e.target.value)}
                   >
-                    <option value="neon">Neon PostgreSQL</option>
+                    <option value="sqlite">SQLite (Local)</option>
+                    <option value="postgresql">PostgreSQL (Local)</option>
                     <option value="remote">Remote PostgreSQL</option>
                   </select>
                 </div>
@@ -2091,6 +2092,31 @@ export default function SettingsPage() {
                   </div>
                 )}
 
+                {databaseStatus && !databaseStatus.isConfigured && (
+                  <div className="p-3 bg-yellow-50 dark:bg-yellow-950 rounded border border-yellow-200 dark:border-yellow-800">
+                    <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                      DATABASE_URL environment variable is not set. Using SQLite for local development. Configure
+                      PostgreSQL connection for production use.
+                    </p>
+                  </div>
+                )}
+
+                <div className="p-4 bg-blue-50 dark:bg-blue-950 rounded-lg">
+                  <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">Database Options</h4>
+                  <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
+                    <p>
+                      • <strong>SQLite:</strong> Fast local development, no setup required
+                    </p>
+                    <p>
+                      • <strong>PostgreSQL:</strong> Production-ready with advanced features
+                    </p>
+                    <p>
+                      • <strong>Remote PostgreSQL:</strong> Connect to external database server
+                    </p>
+                    <p>• Automatic schema initialization on first run</p>
+                  </div>
+                </div>
+
                 {databaseStatus && (
                   <div className="p-4 bg-muted rounded-lg space-y-3">
                     <div className="flex items-center justify-between">
@@ -2134,25 +2160,6 @@ export default function SettingsPage() {
                     )}
                   </div>
                 )}
-
-                {databaseStatus && !databaseStatus.isConfigured && (
-                  <div className="p-3 bg-yellow-50 dark:bg-yellow-950 rounded border border-yellow-200 dark:border-yellow-800">
-                    <p className="text-sm text-yellow-800 dark:text-yellow-200">
-                      DATABASE_URL environment variable is not set. Please configure your Neon database connection in
-                      the Vercel project settings or add it to your .env file.
-                    </p>
-                  </div>
-                )}
-
-                <div className="p-4 bg-blue-50 dark:bg-blue-950 rounded-lg">
-                  <h4 className="font-medium text-blue-800 dark:text-blue-200 mb-2">About Neon Database</h4>
-                  <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
-                    <p>• Serverless PostgreSQL with automatic scaling</p>
-                    <p>• Instant database branching for development</p>
-                    <p>• Automatic backups and point-in-time recovery</p>
-                    <p>• Optimized for Vercel deployments</p>
-                  </div>
-                </div>
               </div>
             </CardContent>
           </Card>

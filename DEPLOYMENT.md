@@ -319,22 +319,33 @@ chmod +x *.sh scripts/*.sh
 
 This application requires a PostgreSQL database. **SQLite does not work on Vercel** due to the serverless architecture.
 
-#### Using Neon (Recommended)
+#### Using PostgreSQL Providers
 
-1. Create a free account at [Neon](https://neon.tech)
-2. Create a new project
-3. Copy the connection string
-4. Add to Vercel environment variables:
+**Recommended Options:**
+
+1. **Vercel Postgres** (Recommended)
+   - Native integration with Vercel
+   - Automatic connection pooling
+   - Free tier available
+   - Setup: Add from Vercel Dashboard → Storage
+
+2. **Supabase**
+   - Free tier with 500MB database
+   - Built-in authentication
+   - Real-time capabilities
+   - Setup: [supabase.com](https://supabase.com)
+
+3. **Railway**
+   - Simple PostgreSQL hosting
+   - Free tier available
+   - Easy setup
+   - Setup: [railway.app](https://railway.app)
+
+4. **Your Own PostgreSQL Server**
+   You can use the predefined remote PostgreSQL server:
    \`\`\`
-   DATABASE_URL=postgresql://user:password@host/database?sslmode=require
+   DATABASE_URL=postgresql://root:mLM58coj7t@149.33.11.224:5432/ctsv3
    \`\`\`
-
-#### Using Your Own PostgreSQL Server
-
-You can use the predefined remote PostgreSQL server:
-\`\`\`
-DATABASE_URL=postgresql://root:mLM58coj7t@149.33.11.224:5432/ctsv3
-\`\`\`
 
 ### Environment Variables
 

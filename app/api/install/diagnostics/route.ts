@@ -10,6 +10,12 @@ export async function POST(request: NextRequest) {
 
     const connections = await query(`SELECT COUNT(*) as count FROM exchange_connections`, [])
 
+    const databaseUrl = process.env.DATABASE_URL || process.env.REMOTE_POSTGRES_URL || ""
+    let dbType = "SQLite"
+    if (databaseUrl.startsWith("postgresql://")) {
+      dbType = "PostgreSQL"
+    }
+
     const diagnostics = {
       system: {
         platform: os.platform(),
@@ -21,7 +27,7 @@ export async function POST(request: NextRequest) {
       },
       database: {
         status: "connected",
-        type: "Neon (PostgreSQL)",
+        type: dbType,
       },
       connections: {
         count: connections[0]?.count || 0,
