@@ -6,6 +6,7 @@ import { ConnectionCard } from "@/components/connection-card"
 import { LogViewer } from "@/components/log-viewer"
 import { StatisticsPanel } from "@/components/statistics-panel"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { RefreshCw, RotateCcw, FileText, Settings, TestTube } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import {
@@ -167,7 +168,10 @@ export default function ConnectionManager() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-4xl font-bold text-balance">Connection Manager</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-4xl font-bold text-balance">Connection Manager</h1>
+              <Badge variant="secondary">Vorschau</Badge>
+            </div>
             <p className="text-muted-foreground mt-2">Manage and monitor all system connections</p>
           </div>
           <div className="flex gap-2">
